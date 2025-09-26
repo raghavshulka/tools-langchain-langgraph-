@@ -1,49 +1,60 @@
-from typing import Literal
-from dotenv import load_dotenv
-from langchain_core.runnables import RunnableBranch, RunnableLambda
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.prompts import PromptTemplate
-from langchain_core.output_parsers import StrOutputParser, PydanticOutputParser
-from pydantic import BaseModel, Field
+from langchain_core.tools import tool
+from langchain import hub
+from langchain.agents import initialize_agent, AgentType
+from langchain_community.tools import DuckDuckGoSearchRun
+import requests
+from dotenv import load_dotenv
 
 load_dotenv()
 
-class Feedback(BaseModel):
-    sentiment: Literal['advantage', 'disadvantage'] = Field(description="Classify as advantage or disadvantage")
+# --- Tools ---
+search_tool = DuckDuckGoSearchRun(region="us-en")
 
-llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.8)
+@tool
+def calculator(first_num: float, second_num: float, operation: str) -> dict:
+    """Perform arithmetic: add, sub, mul, div."""
+    try:
+        if operation == "add":
+            result = first_num + second_num
+        elif operation == "sub":
+            result = first_num - second_num
+        elif operation == "mul":
+            result = first_num * second_num
+        elif operation == "div":
+            if second_num == 0:
+                return {"error": "Division by zero"}
+            result = first_num / second_num
+        else:
+            return {"error": f"Unsupported operation '{operation}'"}
+        return {"result": result}
+    except Exception as e:
+        return {"error": str(e)}
 
-parser2= PydanticOutputParser(pydantic_object=Feedback)
+@tool
+def get_stock_price(symbol: str) -> dict:
+    """Fetch latest stock price from Alpha Vantage."""
+    url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey=C9PE94QUEW9VWGFM"
+    r = requests.get(url)
+    return r.json()
 
-classifier_prompt = PromptTemplate(
-    template="Classify the following text as either advantage or disadvantage:\n\n{topic}\n{format_instruction}",
-    input_variables=["topic"],
-    partial_variables={"format_instruction": parser2.get_format_instructions()}
+tools = [search_tool, calculator, get_stock_price]
+
+# --- LLM ---
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
+
+# --- Agent ---
+agent = initialize_agent(
+    tools=tools,
+    llm=llm,
+    agent=AgentType.OPENAI_FUNCTIONS,  
+    verbose=True
 )
 
-classifier_chain = classifier_prompt | llm | parser2 
-
-advantage_prompt = PromptTemplate(
-    template="Write advantages of {topic}",
-    input_variables=["topic"]
-)
-
-disadvantage_prompt = PromptTemplate(
-    template="Write disadvantages of {topic}",
-    input_variables=["topic"]
-)
-
-parser = StrOutputParser()
-
-branch_chain = RunnableBranch(
-    (lambda x: x.sentiment == "advantage", advantage_prompt | llm | parser),
-    (lambda x: x.sentiment == "disadvantage", disadvantage_prompt | llm | parser),
-    RunnableLambda(lambda _: "Could not classify sentiment.")
-)
-
-chain = classifier_chain | branch_chain
-
-result = chain.invoke({"topic": "what is advantage quantum-computing"})
-print(result)
-
-chain.get_graph().print_ascii()
+# --- Run Queries ---
+print(agent.run("What is 5 multiplied by 7?"))
+print(agent.run("Please greet Himanshu"))
+print(agent.run("Add 20 and 35"))
+print(agent.run("Search latest news about Tesla"))
+print(agent.run("Get stock price for AAPL"))
