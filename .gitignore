@@ -1,9 +1,23 @@
-venv
+# Python cache/compiled files
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-.enviromen
+*.py[cod]
+
+# Virtual environments
+venv/
+.env/
+.venv/
+env/
+env.bak/
+ENV/
+
+# Dotenv files
 .env
-.env*
-enviroment
+.env.*
+*.env
+
+# IDE/editor configs
+.vscode/
+.idea/
+
+# Misc
+*.log
