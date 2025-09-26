@@ -1,48 +1,30 @@
-import array
-from typing import List
-from fastapi import FastAPI
-from pydantic import BaseModel, field_validator
-
-app = FastAPI()
-
-class todoType(BaseModel):
-    topic: str
-    todo: str
-    status: str
+from dotenv import load_dotenv
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
 
 
-    @field_validator('topic')
-    @classmethod
-    def uppercaseTopic(cls,value):
-        return value.upper()
+load_dotenv()
 
 
-arr = []
-
-@app.get("/")
-def root():
-    return {"hello from server"}
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash",temperature=0.8)
 
 
-@app.get("/todos", response_model=List[todoType])
-def get_todos():
-    return arr
+prompt = PromptTemplate(
+    template='tell me about a{topic}',
+    input_variables=['topic']
+)
 
 
-@app.post("/set")
-def set_todos(data:todoType):
-    arr.append(data)
-    return data 
+parser = StrOutputParser()
 
 
-
-@app.delete("/delete/{title}")
-def delete_todo(title: str):
-    for i, todo in enumerate(arr):
-        if todo.topic == title:
-            print(todo,title)
-            removed = arr.pop(i)
-            return {"message": f"Deleted todo '{removed}'"}
-    
+chain = prompt | llm | parser
 
 
+result = chain.invoke({'topic':'python language'})
+
+print(result)
+
+
+chain.get_graph().print_ascii()
